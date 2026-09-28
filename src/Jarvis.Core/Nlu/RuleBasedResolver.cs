@@ -12,16 +12,32 @@ public class RuleBasedResolver : ICommandResolver
 
     private static string StripPolitenessFillers(string appName)
     {
-        var words = appName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0) return appName;
+        var normalized = appName.Trim();
 
-        var lastWordLower = words[^1].ToLowerInvariant();
-        if (PolitenessFillers.Contains(lastWordLower))
+        // Sort fillers by length (longest first) to match multi-word phrases before partial matches
+        var sortedfFillers = PolitenessFillers.OrderByDescending(f => f.Length).ToArray();
+
+        // Try stripping up to twice to handle any stacked fillers
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            return string.Join(" ", words.Take(words.Length - 1)).Trim();
+            foreach (var filler in sortedfFillers)
+            {
+                // Check if normalized name ends with this filler phrase
+                if (normalized.EndsWith(" " + filler, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    normalized = normalized.Substring(0, normalized.Length - filler.Length - 1).Trim();
+                    break; // Found and stripped, try again from top
+                }
+                else if (normalized.Equals(filler, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    // Edge case: name is just the filler, shouldn't happen but handle it
+                    normalized = "";
+                    break;
+                }
+            }
         }
 
-        return appName.Trim();
+        return normalized;
     }
 
     private static readonly string[] ShutdownWords = { "выключи ноут", "выключи компьютер", "выключи комп", "выключи ноутбук" };

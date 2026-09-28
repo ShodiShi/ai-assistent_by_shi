@@ -98,6 +98,8 @@ public class RuleBasedResolverTests
     [InlineData("открой хром, пожалуйста")]
     [InlineData("открой хром пожалуйста")]
     [InlineData("запусти хром плиз")]
+    [InlineData("открой хром будь добр")]
+    [InlineData("открой хром будьте добры")]
     public async Task ResolveAsync_OpenApp_StripsPolitenessFillers(string phrase)
     {
         var result = await _resolver.ResolveAsync(phrase, BuildContext());
@@ -110,6 +112,8 @@ public class RuleBasedResolverTests
     [Theory]
     [InlineData("закрой хром, пожалуйста")]
     [InlineData("закрой хром пожалуйста")]
+    [InlineData("закрой хром будь добр")]
+    [InlineData("закрой хром будьте добры")]
     public async Task ResolveAsync_CloseApp_StripsPolitenessFillers(string phrase)
     {
         var result = await _resolver.ResolveAsync(phrase, BuildContext());

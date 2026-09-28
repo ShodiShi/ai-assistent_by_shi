@@ -21,6 +21,9 @@ Screenshots/
 notes.md
 config/user_aliases.yaml
 
+# Рабочие файлы subagent-driven-development (леджер, брифы, отчёты)
+.superpowers/
+
 # IDE
 .vs/
 .vscode/

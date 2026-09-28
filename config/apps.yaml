@@ -1,0 +1,20 @@
+apps:
+  - name: Google Chrome
+    aliases: [хром, гугл хром, chrome, браузер]
+    path: C:\Program Files\Google\Chrome\Application\chrome.exe
+  - name: Telegram
+    aliases: [телеграм, телега, telegram]
+    path: "%APPDATA%\\Telegram Desktop\\Telegram.exe"
+  - name: Discord
+    aliases: [дискорд, discord]
+    path: "%LOCALAPPDATA%\\Discord\\Update.exe"
+    shell_command: "--processStart Discord.exe"
+  - name: Visual Studio Code
+    aliases: [вс код, vs code, код, vscode]
+    path: "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"
+  - name: Проводник
+    aliases: [проводник, файлы, explorer]
+    path: explorer.exe
+  - name: Блокнот
+    aliases: [блокнот, notepad]
+    path: notepad.exe

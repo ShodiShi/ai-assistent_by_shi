@@ -1,0 +1,8 @@
+language: ru
+embedding_threshold: 0.72
+volume_step_percent: 10
+shutdown_confirm_seconds: 20
+log_retention_days: 14
+embedding_model_path: models/e5-small-int8.onnx
+embedding_tokenizer_path: models/sentencepiece.bpe.model
+intents_directory: config/intents

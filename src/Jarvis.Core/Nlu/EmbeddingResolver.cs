@@ -31,7 +31,7 @@ public class EmbeddingResolver : ICommandResolver
         if (best.Score < _threshold)
             return Task.FromResult(ResolveResult.Unresolved());
 
-        var args = ArgExtraction.ExtractArgs(best.Sample.Tool, utterance);
+        var args = ArgExtraction.ExtractArgs(best.Sample.Tool, utterance, context.Apps);
         return Task.FromResult(ResolveResult.For(best.Sample.Tool, args, best.Score, Level));
     }
 

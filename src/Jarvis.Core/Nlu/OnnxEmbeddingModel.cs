@@ -31,6 +31,16 @@ public class OnnxEmbeddingModel : IEmbeddingModel, IDisposable
             NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask),
         };
 
+        // Some BERT-architecture exports (type_vocab_size=2) also declare a third input,
+        // token_type_ids. Only add it when the loaded model actually asks for it, so this
+        // works whether or not the real model needs it, instead of hardcoding exactly two
+        // inputs and risking a "Missing Input" exception the first time this runs for real.
+        if (_session.InputMetadata.ContainsKey("token_type_ids"))
+        {
+            var tokenTypeIds = new DenseTensor<long>(new long[ids.Length], new[] { 1, ids.Length });
+            inputs.Add(NamedOnnxValue.CreateFromTensor("token_type_ids", tokenTypeIds));
+        }
+
         using var outputs = _session.Run(inputs);
         var lastHiddenState = outputs.First(o => o.Name == "last_hidden_state").AsTensor<float>();
 

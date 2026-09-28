@@ -1,0 +1,32 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Go
+guard/*.exe
+guard/jarvis-guard
+
+# Модели (скачиваются отдельно скриптами scripts/download-models.*)
+models/
+*.onnx
+*.bin
+*.gguf
+*.ggml*
+
+# Пользовательские данные и логи
+logs/
+Screenshots/
+notes.md
+config/user_aliases.yaml
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.rider*
+
+# OS
+Thumbs.db
+desktop.ini

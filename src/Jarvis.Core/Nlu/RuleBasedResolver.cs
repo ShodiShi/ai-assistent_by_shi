@@ -10,10 +10,25 @@ public class RuleBasedResolver : ICommandResolver
     private static string Normalize(string text) =>
         Regex.Replace(text.Trim().ToLowerInvariant(), @"[!?.,;]+", "").Trim();
 
+    private static string StripPolitenessFillers(string appName)
+    {
+        var words = appName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return appName;
+
+        var lastWordLower = words[^1].ToLowerInvariant();
+        if (PolitenessFillers.Contains(lastWordLower))
+        {
+            return string.Join(" ", words.Take(words.Length - 1)).Trim();
+        }
+
+        return appName.Trim();
+    }
+
     private static readonly string[] ShutdownWords = { "выключи ноут", "выключи компьютер", "выключи комп", "выключи ноутбук" };
     private static readonly string[] RestartWords = { "перезагрузи компьютер", "перезагрузи комп", "перезагрузи ноутбук", "ребут" };
     private static readonly string[] LockWords = { "заблокируй экран", "заблокируй компьютер", "заблокируй ноутбук" };
     private static readonly string[] SleepWords = { "усыпи ноутбук", "усыпи компьютер", "спящий режим" };
+    private static readonly string[] PolitenessFillers = { "пожалуйста", "плиз", "будь добр", "будьте добры" };
 
     public Task<ResolveResult> ResolveAsync(string utterance, NluContext context)
     {
@@ -21,11 +36,11 @@ public class RuleBasedResolver : ICommandResolver
 
         var openMatch = Regex.Match(text, @"^(открой|запусти)\s+(?<name>.+)$");
         if (openMatch.Success)
-            return Resolved("open_app", new() { ["name"] = openMatch.Groups["name"].Value.Trim() });
+            return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(openMatch.Groups["name"].Value.Trim()) });
 
         var closeMatch = Regex.Match(text, @"^(закрой|вырубай|выруби)\s+(?<name>.+)$");
         if (closeMatch.Success)
-            return Resolved("close_app", new() { ["name"] = closeMatch.Groups["name"].Value.Trim() });
+            return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(closeMatch.Groups["name"].Value.Trim()) });
 
         if (ShutdownWords.Any(w => text.Contains(w)))
             return Resolved("system_control", new() { ["action"] = "shutdown" });

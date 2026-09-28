@@ -93,4 +93,29 @@ public class RuleBasedResolverTests
 
         Assert.False(result.Resolved);
     }
+
+    [Theory]
+    [InlineData("открой хром, пожалуйста")]
+    [InlineData("открой хром пожалуйста")]
+    [InlineData("запусти хром плиз")]
+    public async Task ResolveAsync_OpenApp_StripsPolitenessFillers(string phrase)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("open_app", result.ToolName);
+        Assert.Equal("хром", result.Args["name"]);
+    }
+
+    [Theory]
+    [InlineData("закрой хром, пожалуйста")]
+    [InlineData("закрой хром пожалуйста")]
+    public async Task ResolveAsync_CloseApp_StripsPolitenessFillers(string phrase)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("close_app", result.ToolName);
+        Assert.Equal("хром", result.Args["name"]);
+    }
 }

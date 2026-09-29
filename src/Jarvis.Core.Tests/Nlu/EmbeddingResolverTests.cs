@@ -8,7 +8,16 @@ public class FakeEmbeddingModel : IEmbeddingModel
 {
     // Возвращает почти one-hot вектор по "ключевому слову темы" во фразе,
     // чтобы косинусное сходство было детерминированным и предсказуемым в тестах.
-    private static readonly string[] Topics = { "app", "volume", "battery", "unrelated" };
+    //
+    // Фразы без узнаваемой темы получают НУЛЕВОЙ вектор, а не отдельную one-hot категорию
+    // "unrelated": CosineSimilarity возвращает 0 для нулевого вектора (см. EmbeddingResolver),
+    // поэтому такая фраза никогда не совпадёт ни с одним embedding-сэмплом. Раньше, когда
+    // "unrelated" было полноценной one-hot категорией (topic 3), ЛЮБАЯ фраза без ключевых слов
+    // получала cosine=1.0 с ЛЮБОЙ другой такой же безключевой фразой — а среди реальных
+    // intent-сэмплов из config/intents (используемых PhraseFixtureTests) таких фраз десятки
+    // (например, все примеры system_control), так что заведомо нерелевантные фразы вроде
+    // "расскажи анекдот про кота" ложно резолвились в случайный инструмент.
+    private static readonly string[] Topics = { "app", "volume", "battery" };
 
     public float[] Embed(string text)
     {
@@ -17,7 +26,6 @@ public class FakeEmbeddingModel : IEmbeddingModel
         if (lower.Contains("хром") || lower.Contains("открой") || lower.Contains("браузер")) vector[0] = 1f;
         else if (lower.Contains("звук") || lower.Contains("гром")) vector[1] = 1f;
         else if (lower.Contains("батаре")) vector[2] = 1f;
-        else vector[3] = 1f;
         return vector;
     }
 }

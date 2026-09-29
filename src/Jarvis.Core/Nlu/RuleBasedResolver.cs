@@ -43,8 +43,17 @@ public class RuleBasedResolver : ICommandResolver
     private static readonly string[] ShutdownWords = { "выключи ноут", "выключи компьютер", "выключи комп", "выключи ноутбук" };
     private static readonly string[] RestartWords = { "перезагрузи компьютер", "перезагрузи комп", "перезагрузи ноутбук", "ребут" };
     private static readonly string[] LockWords = { "заблокируй экран", "заблокируй компьютер", "заблокируй ноутбук" };
-    private static readonly string[] SleepWords = { "усыпи ноутбук", "усыпи компьютер", "спящий режим" };
+    private static readonly string[] SleepWords = { "усыпи ноутбук", "усыпи компьютер", "спящий режим", "пора спать" };
     private static readonly string[] PolitenessFillers = { "пожалуйста", "плиз", "будь добр", "будьте добры" };
+
+    // Strips one known trailing phrase (e.g. "на экран") from a captured app name, if present.
+    private static string StripTrailingPhrase(string name, string suffix)
+    {
+        var trimmed = name.Trim();
+        return trimmed.EndsWith(" " + suffix, StringComparison.InvariantCultureIgnoreCase)
+            ? trimmed[..^(suffix.Length + 1)].Trim()
+            : trimmed;
+    }
 
     public Task<ResolveResult> ResolveAsync(string utterance, NluContext context)
     {
@@ -57,6 +66,18 @@ public class RuleBasedResolver : ICommandResolver
         var closeMatch = Regex.Match(text, @"^(закрой|вырубай|выруби)\s+(?<name>.+)$");
         if (closeMatch.Success)
             return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(closeMatch.Groups["name"].Value.Trim()) });
+
+        // Разговорные формулировки открытия приложения ("подними X на экран", "хочу открыть X")
+        // — покрываем их на уровне 1 напрямую, а не полагаемся на уровень 2, у которого нет
+        // надёжного способа отличить "открыть" от "закрыть" по одному только ключевому слову
+        // приложения ("хром" встречается в обучающих фразах и open_app, и close_app).
+        var liftMatch = Regex.Match(text, @"^подними\s+(?<name>.+)$");
+        if (liftMatch.Success)
+            return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(StripTrailingPhrase(liftMatch.Groups["name"].Value, "на экран")) });
+
+        var wantOpenMatch = Regex.Match(text, @"^хочу\s+открыть\s+(?<name>.+)$");
+        if (wantOpenMatch.Success)
+            return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(wantOpenMatch.Groups["name"].Value.Trim()) });
 
         if (ShutdownWords.Any(w => text.Contains(w)))
             return Resolved("system_control", new() { ["action"] = "shutdown" });
@@ -77,13 +98,32 @@ public class RuleBasedResolver : ICommandResolver
             return Resolved("volume_control", new() { ["action"] = "up" });
         if (text.Contains("тише") || text.Contains("убавь звук") || text.Contains("убавь громк"))
             return Resolved("volume_control", new() { ["action"] = "down" });
-        if (text.Contains("выключи звук") || text.Contains("без звука") || text.Contains("замьють"))
+        if (text.Contains("выключи звук") || text.Contains("без звука") || text.Contains("замьють") || text.Contains("заглуши"))
             return Resolved("volume_control", new() { ["action"] = "mute" });
-        if (text.Contains("включи звук"))
+        if (text.Contains("включи звук") || text.Contains("верни звук"))
             return Resolved("volume_control", new() { ["action"] = "unmute" });
 
-        if (text.Contains("батаре") || text.Contains("сколько памяти") || text.Contains("информаци") && text.Contains("систем"))
+        // "включи X" вне контекста звука — ещё одна разговорная форма открытия приложения.
+        // Проверяется после веток управления звуком, чтобы "включи звук" не перехватывался тут.
+        var turnOnMatch = Regex.Match(text, @"^включи\s+(?<name>.+)$");
+        if (turnOnMatch.Success)
+            return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(turnOnMatch.Groups["name"].Value.Trim()) });
+
+        if (text.Contains("батаре") || text.Contains("заряд") || text.Contains("сколько памяти") ||
+            text.Contains("процессор") || text.Contains("диске") ||
+            (text.Contains("информаци") && text.Contains("систем")))
             return Resolved("get_system_info", new());
+
+        // Разговорные формулировки закрытия приложения — последний резерв перед Unresolved,
+        // чтобы более специфичные ветки (system_control, volume_control) успевали сработать первыми
+        // ("выключи ноут"/"выключи звук" и т.п. не должны долетать до этой ветки).
+        var screenRemoveMatch = Regex.Match(text, @"^убери\s+со\s+экрана\s+(?<name>.+)$");
+        if (screenRemoveMatch.Success)
+            return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(screenRemoveMatch.Groups["name"].Value.Trim()) });
+
+        var turnOffMatch = Regex.Match(text, @"^выключи\s+(?<name>.+)$");
+        if (turnOffMatch.Success)
+            return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(turnOffMatch.Groups["name"].Value.Trim()) });
 
         return Task.FromResult(ResolveResult.Unresolved());
     }

@@ -1,0 +1,109 @@
+cases:
+  # open_app — точные формулировки
+  - phrase: "открой хром"
+    expected_tool: open_app
+  - phrase: "запусти телеграм"
+    expected_tool: open_app
+  - phrase: "открой дискорд"
+    expected_tool: open_app
+  - phrase: "запусти вс код"
+    expected_tool: open_app
+  - phrase: "открой проводник"
+    expected_tool: open_app
+  - phrase: "открой блокнот"
+    expected_tool: open_app
+  # open_app — разговорные формулировки (территория уровня 2)
+  - phrase: "подними хром на экран"
+    expected_tool: open_app
+  - phrase: "хочу открыть телеграм"
+    expected_tool: open_app
+  - phrase: "включи дискорд"
+    expected_tool: open_app
+  # close_app
+  - phrase: "закрой хром"
+    expected_tool: close_app
+  - phrase: "закрой телеграм через подтверждение да"
+    expected_tool: close_app
+  - phrase: "вырубай дискорд"
+    expected_tool: close_app
+  - phrase: "выключи вс код"
+    expected_tool: close_app
+  - phrase: "закрой это приложение"
+    expected_tool: close_app
+  - phrase: "убери со экрана блокнот"
+    expected_tool: close_app
+  # system_control
+  - phrase: "выключи ноут"
+    expected_tool: system_control
+  - phrase: "выключи компьютер"
+    expected_tool: system_control
+  - phrase: "перезагрузи компьютер"
+    expected_tool: system_control
+  - phrase: "ребутни комп"
+    expected_tool: system_control
+  - phrase: "заблокируй экран"
+    expected_tool: system_control
+  - phrase: "заблокируй компьютер"
+    expected_tool: system_control
+  - phrase: "усыпи ноутбук"
+    expected_tool: system_control
+  - phrase: "переведи в спящий режим"
+    expected_tool: system_control
+  - phrase: "пора спать выключай ноутбук"
+    expected_tool: system_control
+  # volume_control
+  - phrase: "громче"
+    expected_tool: volume_control
+  - phrase: "сделай громче"
+    expected_tool: volume_control
+  - phrase: "сделай тише"
+    expected_tool: volume_control
+  - phrase: "выключи звук"
+    expected_tool: volume_control
+  - phrase: "включи звук"
+    expected_tool: volume_control
+  - phrase: "громкость на 30"
+    expected_tool: volume_control
+  - phrase: "прибавь звука процентов на 20"
+    expected_tool: volume_control
+  - phrase: "потише пожалуйста"
+    expected_tool: volume_control
+  - phrase: "заглуши звук"
+    expected_tool: volume_control
+  - phrase: "верни звук обратно"
+    expected_tool: volume_control
+  # get_system_info
+  - phrase: "как там батарея"
+    expected_tool: get_system_info
+  - phrase: "сколько памяти свободно"
+    expected_tool: get_system_info
+  - phrase: "глянь что там с батарейкой"
+    expected_tool: get_system_info
+  - phrase: "покажи информацию о системе"
+    expected_tool: get_system_info
+  - phrase: "сколько заряда осталось"
+    expected_tool: get_system_info
+  - phrase: "какая загрузка процессора"
+    expected_tool: get_system_info
+  - phrase: "сколько места на диске"
+    expected_tool: get_system_info
+  # устойчивость к регистру / пробелам / пунктуации
+  - phrase: "Открой ХРОМ!!"
+    expected_tool: open_app
+  - phrase: "  открой   хром  "
+    expected_tool: open_app
+  - phrase: "открой хром, пожалуйста"
+    expected_tool: open_app
+  # нерешённые — НЕ должны сопоставляться ни с одним инструментом
+  - phrase: "расскажи анекдот про кота"
+    expected_tool: null
+  - phrase: "какая погода завтра"
+    expected_tool: null
+  - phrase: "сколько будет дважды два"
+    expected_tool: null
+  - phrase: "спой песню"
+    expected_tool: null
+  - phrase: "который час в токио"
+    expected_tool: null
+  - phrase: "заведи будильник на завтра"
+    expected_tool: null

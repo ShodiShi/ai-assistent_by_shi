@@ -25,4 +25,8 @@
     <ProjectReference Include="..\Jarvis.Core\Jarvis.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Resources\test-phrases.yaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

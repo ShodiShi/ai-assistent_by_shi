@@ -15,6 +15,12 @@ public class VolumeControlTool : ITool
 
     public string Name => "volume_control";
 
+    public IReadOnlyDictionary<string, ArgSpec> ArgsSchema { get; } = new Dictionary<string, ArgSpec>
+    {
+        ["action"] = new ArgSpec(ArgType.String, Required: true, AllowedValues: new[] { "up", "down", "mute", "unmute" }),
+        ["amount"] = new ArgSpec(ArgType.Int, Required: false),
+    };
+
     public Task<ToolResult> ExecuteAsync(IReadOnlyDictionary<string, object?> args, ToolContext context)
     {
         var action = args.GetValueOrDefault("action") as string ?? "";

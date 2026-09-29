@@ -16,6 +16,11 @@ public class OpenAppTool : ITool
 
     public string Name => "open_app";
 
+    public IReadOnlyDictionary<string, ArgSpec> ArgsSchema { get; } = new Dictionary<string, ArgSpec>
+    {
+        ["name"] = new ArgSpec(ArgType.String, Required: true),
+    };
+
     public Task<ToolResult> ExecuteAsync(IReadOnlyDictionary<string, object?> args, ToolContext context)
     {
         var name = args.GetValueOrDefault("name") as string ?? "";

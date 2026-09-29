@@ -95,6 +95,12 @@ public class CommandPipeline
         if (tool is null)
             return new PipelineOutcome($"Инструмент {toolName} не найден.", level, toolName, false);
 
+        if (!ArgsValidator.Validate(tool.ArgsSchema, args, out var validationError))
+        {
+            _logger?.Warning("Аргументы для инструмента {ToolName} не прошли проверку схемой: {Error}", toolName, validationError);
+            return new PipelineOutcome($"Не получилось выполнить команду: {validationError}.", level, toolName, false);
+        }
+
         ToolResult result;
         try
         {

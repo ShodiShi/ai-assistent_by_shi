@@ -357,6 +357,66 @@ public class CommandPipelineErrorHandlingTests
     }
 }
 
+// Tool with a real declared schema (a required "name" string), used to prove the pipeline
+// validates args BEFORE calling ExecuteAsync, not after.
+public class SchemaRecordingTool : ITool
+{
+    public List<IReadOnlyDictionary<string, object?>> Calls = new();
+    public string Name => "open_app";
+    public IReadOnlyDictionary<string, ArgSpec> ArgsSchema { get; } = new Dictionary<string, ArgSpec>
+    {
+        ["name"] = new ArgSpec(ArgType.String, Required: true),
+    };
+    public Task<ToolResult> ExecuteAsync(IReadOnlyDictionary<string, object?> args, ToolContext context)
+    {
+        Calls.Add(args);
+        return Task.FromResult(new ToolResult(true, "Открываю."));
+    }
+}
+
+// Spec: "Все инструменты и их аргументы описаны JSON-схемой, которую CommandPipeline
+// использует для валидации параметров ... до вызова ExecuteAsync."
+public class CommandPipelineSchemaValidationTests
+{
+    private static NluContext BuildContext() => new(new AppsCatalog(new List<AppEntry>()));
+
+    [Fact]
+    public async Task ProcessAsync_MissingRequiredArg_DoesNotInvokeToolAndReportsFailure()
+    {
+        var tool = new SchemaRecordingTool();
+        var resolvers = new ICommandResolver[]
+        {
+            // resolved with an EMPTY args dict, even though the tool requires "name" — this
+            // simulates a resolver that failed to extract a required parameter.
+            new StubResolver(1, ResolveResult.For("open_app", new Dictionary<string, object?>(), 1.0, 1)),
+        };
+        var registry = new ToolRegistry(new ITool[] { tool });
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext());
+
+        var outcome = await pipeline.ProcessAsync("открой");
+
+        Assert.Empty(tool.Calls);
+        Assert.False(outcome.Resolved);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ValidArgs_InvokesToolNormally()
+    {
+        var tool = new SchemaRecordingTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("open_app", new Dictionary<string, object?> { ["name"] = "хром" }, 1.0, 1)),
+        };
+        var registry = new ToolRegistry(new ITool[] { tool });
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext());
+
+        var outcome = await pipeline.ProcessAsync("открой хром");
+
+        Assert.Single(tool.Calls);
+        Assert.True(outcome.Resolved);
+    }
+}
+
 // Deterministic clock for testing the confirmation timeout without real delays.
 public class ManualTimeProvider : TimeProvider
 {

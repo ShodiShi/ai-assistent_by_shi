@@ -15,6 +15,11 @@ public class SystemControlTool : ITool
 
     public string Name => "system_control";
 
+    public IReadOnlyDictionary<string, ArgSpec> ArgsSchema { get; } = new Dictionary<string, ArgSpec>
+    {
+        ["action"] = new ArgSpec(ArgType.String, Required: true, AllowedValues: new[] { "lock", "shutdown", "restart", "sleep" }),
+    };
+
     public Task<ToolResult> ExecuteAsync(IReadOnlyDictionary<string, object?> args, ToolContext context)
     {
         var action = args.GetValueOrDefault("action") as string ?? "";

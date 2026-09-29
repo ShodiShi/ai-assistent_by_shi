@@ -131,6 +131,14 @@ public class RuleBasedResolverTests
     [InlineData("сделай звук тише на 15", "down", 15)]
     [InlineData("прибавь звука процентов на 20", "up", 20)]
     [InlineData("громкость на 30", "up", 30)] // no directional verb at all -> "up" default
+    // Regression: "тише"/"громче" alone (without literally saying "звук"/"громкость") used to
+    // fail MentionsVolume's number-extraction gate entirely, silently dropping the amount and
+    // falling back to the tool's default step — found via manual testing ("сделай тише на 30"
+    // changed volume by only 10%, the default, not by 30 as asked).
+    [InlineData("сделай тише на 30", "down", 30)]
+    [InlineData("сделай громче на 25", "up", 25)]
+    [InlineData("потише на 15", "down", 15)]
+    [InlineData("погромче на 40", "up", 40)]
     public async Task ResolveAsync_VolumeWithAmount_TakesDirectionFromVerb(string phrase, string expectedAction, int expectedAmount)
     {
         var result = await _resolver.ResolveAsync(phrase, BuildContext());

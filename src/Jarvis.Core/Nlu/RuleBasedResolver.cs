@@ -60,7 +60,8 @@ public class RuleBasedResolver : ICommandResolver
     // guessed wrong about which verb sense was meant. Guards against that regardless of where
     // these catch-alls sit relative to the volume_control checks (belt-and-suspenders on top of
     // ordering them after volume_control below).
-    private static bool MentionsVolume(string text) => text.Contains("звук") || text.Contains("громк");
+    private static bool MentionsVolume(string text) =>
+        text.Contains("звук") || text.Contains("громк") || text.Contains("тише") || text.Contains("громче");
 
     // Same idea as MentionsVolume, for the computer itself: "вырубай комп" means "shut the
     // computer down", not "close an app called «комп»". "пк" is matched only as a whole word so

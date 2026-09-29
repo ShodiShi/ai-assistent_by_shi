@@ -5,11 +5,14 @@
 # перекачивается только если существующий локальный файл не совпадает с сохранённым хэшем.
 
 $ErrorActionPreference = "Stop"
+# В Windows PowerShell 5.1 отрисовка прогресс-бара Invoke-WebRequest многократно замедляет
+# скачивание больших файлов (модель ~118 МБ) — отключаем его.
+$ProgressPreference = 'SilentlyContinue'
 $modelsDir = Join-Path $PSScriptRoot "..\models"
 New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
 
 $files = @(
-    @{ Url = "https://huggingface.co/onnx-community/multilingual-e5-small/resolve/main/onnx/model_int8.onnx"; Name = "e5-small-int8.onnx" },
+    @{ Url = "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/onnx/model_int8.onnx"; Name = "e5-small-int8.onnx" },
     @{ Url = "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/sentencepiece.bpe.model"; Name = "sentencepiece.bpe.model" }
 )
 

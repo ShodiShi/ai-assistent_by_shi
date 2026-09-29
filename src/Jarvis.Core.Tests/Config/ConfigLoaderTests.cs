@@ -50,6 +50,28 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void LoadAppsCatalog_ParsesOptionalProcessName()
+    {
+        var yaml = """
+        apps:
+          - name: Discord
+            aliases: [дискорд]
+            path: "%LOCALAPPDATA%\\Discord\\Update.exe"
+            process_name: Discord
+          - name: Блокнот
+            aliases: [блокнот]
+            path: notepad.exe
+        """;
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, yaml);
+
+        var catalog = ConfigLoader.LoadAppsCatalog(path);
+
+        Assert.Equal("Discord", catalog.FindByNameOrAlias("дискорд")!.ProcessName);
+        Assert.Null(catalog.FindByNameOrAlias("блокнот")!.ProcessName);
+    }
+
+    [Fact]
     public void LoadAppsCatalog_UnknownAlias_ReturnsNull()
     {
         var yaml = "apps: []";

@@ -9,6 +9,7 @@ apps:
     aliases: [дискорд, discord]
     path: "%LOCALAPPDATA%\\Discord\\Update.exe"
     shell_command: "--processStart Discord.exe"
+    process_name: Discord
   - name: Visual Studio Code
     aliases: [вс код, vs code, код, vscode]
     path: "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"

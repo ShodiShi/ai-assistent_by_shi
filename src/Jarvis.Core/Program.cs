@@ -59,7 +59,7 @@ else
 }
 
 var context = new NluContext(appsCatalog);
-var pipeline = new CommandPipeline(resolvers, registry, context);
+var pipeline = new CommandPipeline(resolvers, registry, context, logger);
 
 Console.WriteLine("Jarvis.Core — этап 1 (текстовый режим). Ctrl+C для выхода.");
 
@@ -70,8 +70,22 @@ while (true)
     if (line is null) break;
     if (line.Trim().Length == 0) continue;
 
-    if (line.Trim().Equals("отмена", StringComparison.OrdinalIgnoreCase))
+    // "отмена" обрабатывается здесь целиком и в pipeline не передаётся: после «да» ожидание
+    // подтверждения в pipeline уже сброшено, а ни один резолвер не знает слова «отмена», так что
+    // pipeline ответил бы «Не понял команду.», хотя shutdown /a на самом деле сработал.
+    // ClearPending() сбрасывает ожидающее подтверждение, если оно есть (например, «выключи ноут»
+    // → «отмена»), чтобы следующее «да» не выполнило уже отменённое действие.
+    if (CommandPipeline.IsCancelCommand(line))
+    {
+        pipeline.ClearPending();
         powerActions.CancelShutdown();
+
+        logger.Information("{@Entry}", new CommandLogEntry(
+            DateTimeOffset.Now, line, 0, null, "success"));
+
+        Console.WriteLine("Отменено.");
+        continue;
+    }
 
     var outcome = await pipeline.ProcessAsync(line);
 

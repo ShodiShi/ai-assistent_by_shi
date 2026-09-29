@@ -23,16 +23,7 @@ public static class ArgExtraction
                 if (RussianNumberParser.TryExtractPercent(text, out var percent))
                     args["amount"] = percent;
 
-                string action;
-                if (text.Contains("тиш") || text.Contains("убав"))
-                    action = "down";
-                else if (text.Contains("глуш") || text.Contains("выруби"))
-                    action = "mute";
-                else if (text.Contains("включи звук"))
-                    action = "unmute";
-                else
-                    action = "up";
-                args["action"] = action;
+                args["action"] = DetectVolumeAction(text);
                 break;
             }
             case "system_control":
@@ -51,6 +42,32 @@ public static class ArgExtraction
             }
         }
         return args;
+    }
+
+    // Verb stems deciding the direction of a volume command, matched as substrings of the
+    // lowercased utterance. Decrease and mute are checked BEFORE increase/unmute and before the
+    // "up" default: an explicit "убавь"/"уменьши"/"выключи" must never come out as "up" just
+    // because it wasn't listed (the old chain turned "уменьши громкость на 20" and
+    // "выключи-ка звук" into "up").
+    private static readonly string[] VolumeDecreaseStems = { "убав", "уменьш", "пониз", "сниз", "тиш", "меньше" };
+    private static readonly string[] VolumeMuteStems = { "выключ", "выруб", "глуш", "без звука", "замьют" };
+    private static readonly string[] VolumeIncreaseStems = { "прибав", "увелич", "громче", "подним", "больше" };
+    // Same phrases RuleBasedResolver's own unmute branch recognizes.
+    private static readonly string[] VolumeUnmuteStems = { "включи звук", "верни звук", "включи громкость" };
+
+    // Shared by level 2 (ExtractArgs above) and level 1 (RuleBasedResolver's "громкость/звук +
+    // number" branch), so both levels take a volume command's direction from its verb with the
+    // same rules. Only reached once the caller already knows the utterance is a volume command,
+    // so broad stems like "выключ" are safe here. "up" is the default only when no directional
+    // verb is present at all ("громкость на 30").
+    public static string DetectVolumeAction(string text)
+    {
+        var lower = text.ToLowerInvariant();
+        if (VolumeDecreaseStems.Any(lower.Contains)) return "down";
+        if (VolumeMuteStems.Any(lower.Contains)) return "mute";
+        if (VolumeIncreaseStems.Any(lower.Contains)) return "up";
+        if (VolumeUnmuteStems.Any(lower.Contains)) return "unmute";
+        return "up";
     }
 
     // Level 2 must extract app names using the same catalog level 1's tools already rely on

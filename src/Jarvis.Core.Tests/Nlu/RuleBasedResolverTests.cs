@@ -120,6 +120,92 @@ public class RuleBasedResolverTests
         Assert.Equal(expectedAction, result.Args["action"]);
     }
 
+    // Regression coverage for a real bug: whenever a number was present alongside a volume word,
+    // the "громкость/звук + number" branch hardcoded action=up without looking at the verb, so an
+    // explicit decrease verb with a number came out as the OPPOSITE direction.
+    [Theory]
+    [InlineData("убавь звук на 20", "down", 20)]
+    [InlineData("уменьши громкость на 20", "down", 20)]
+    [InlineData("убавь громкость на 30 процентов", "down", 30)]
+    [InlineData("понизь громкость на 10", "down", 10)]
+    [InlineData("сделай звук тише на 15", "down", 15)]
+    [InlineData("прибавь звука процентов на 20", "up", 20)]
+    [InlineData("громкость на 30", "up", 30)] // no directional verb at all -> "up" default
+    public async Task ResolveAsync_VolumeWithAmount_TakesDirectionFromVerb(string phrase, string expectedAction, int expectedAmount)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("volume_control", result.ToolName);
+        Assert.Equal(expectedAction, result.Args["action"]);
+        Assert.Equal(expectedAmount, result.Args["amount"]);
+    }
+
+    // "включи звук" means "switch the sound on" (unmute) — the same action level 1 already gives
+    // the bare "включи звук" above. With a number attached the verb still means "on", not
+    // "raise": VolumeControlTool's "up" only moves the level and never clears the mute flag, so
+    // "up 50" on a muted system would stay silent. The amount is kept in the args (the tool
+    // ignores it for unmute) rather than silently dropped.
+    [Fact]
+    public async Task ResolveAsync_TurnOnSoundWithAmount_ResolvesAsUnmute()
+    {
+        var result = await _resolver.ResolveAsync("включи звук на 50", BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("volume_control", result.ToolName);
+        Assert.Equal("unmute", result.Args["action"]);
+        Assert.Equal(50, result.Args["amount"]);
+    }
+
+    // Regression coverage for a real bug: the "закрой|вырубай|выруби X" -> close_app regex
+    // claimed ANY phrase starting with "вырубай"/"выруби", so "вырубай комп" (an example phrase
+    // named in the Stage 1 spec) replied «Не знаю приложение «комп».» instead of shutting down,
+    // and "выруби звук" tried to close an app called "звук". The last two phrases of each group
+    // are real config/intents/*.yaml catalog samples.
+    [Theory]
+    [InlineData("вырубай комп")]
+    [InlineData("выруби ноутбук")]
+    [InlineData("выруби пк")]
+    [InlineData("вырубай комп совсем")]
+    public async Task ResolveAsync_CutVerbWithComputer_ResolvesAsShutdown(string phrase)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("system_control", result.ToolName);
+        Assert.Equal("shutdown", result.Args["action"]);
+    }
+
+    [Theory]
+    [InlineData("выруби звук")]
+    [InlineData("вырубай громкость")]
+    [InlineData("выруби звук на компе")] // volume object wins over the incidental "комп"
+    [InlineData("выруби звук совсем")]
+    public async Task ResolveAsync_CutVerbWithSound_ResolvesAsMute(string phrase)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("volume_control", result.ToolName);
+        Assert.Equal("mute", result.Args["action"]);
+    }
+
+    // The guard above must not over-exclude: a real app name after "вырубай"/"выруби"/"закрой"
+    // still goes to close_app, including names that merely contain the letters "пк" inside a
+    // longer word ("пк" is only treated as "computer" as a whole word).
+    [Theory]
+    [InlineData("вырубай дискорд", "дискорд")]
+    [InlineData("выруби хром", "хром")]
+    [InlineData("закрой папку", "папку")]
+    public async Task ResolveAsync_CutVerbWithAppName_StillResolvesAsCloseApp(string phrase, string expectedName)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("close_app", result.ToolName);
+        Assert.Equal(expectedName, result.Args["name"]);
+    }
+
     [Theory]
     [InlineData("как там батарея")]
     [InlineData("сколько памяти свободно")]

@@ -70,6 +70,7 @@ public class PhraseFixtureTests
     {
         var intentsDir = Path.Combine(FindRepoRoot(), "config", "intents");
         var samples = IntentCatalog.LoadFromDirectory(intentsDir);
+        Assert.NotEmpty(samples);
         var resolvers = new List<ICommandResolver>
         {
             new RuleBasedResolver(),

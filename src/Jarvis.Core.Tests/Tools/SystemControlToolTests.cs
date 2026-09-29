@@ -62,6 +62,36 @@ public class SystemControlToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_RestartNotConfirmed_AsksAndDoesNotRestart()
+    {
+        var fake = new FakeSystemPowerActions();
+        var tool = new SystemControlTool(fake, confirmSeconds: 20);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object?> { ["action"] = "restart" }, new ToolContext());
+
+        Assert.Null(fake.RestartDelay);
+        Assert.Null(fake.ShutdownDelay);
+        Assert.NotNull(result.Confirmation);
+        Assert.Equal("system_control", result.Confirmation!.ToolName);
+        Assert.Equal("restart", result.Confirmation.Args["action"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RestartConfirmed_CallsRestartWithConfiguredDelay()
+    {
+        var fake = new FakeSystemPowerActions();
+        var tool = new SystemControlTool(fake, confirmSeconds: 45);
+
+        var result = await tool.ExecuteAsync(
+            new Dictionary<string, object?> { ["action"] = "restart" },
+            new ToolContext(IsConfirmed: true));
+
+        Assert.Equal(45, fake.RestartDelay);
+        Assert.Null(fake.ShutdownDelay);
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_SleepNotConfirmed_AsksAndDoesNotSleep()
     {
         var fake = new FakeSystemPowerActions();

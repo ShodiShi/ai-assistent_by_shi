@@ -62,6 +62,17 @@ public class RuleBasedResolver : ICommandResolver
     // ordering them after volume_control below).
     private static bool MentionsVolume(string text) => text.Contains("звук") || text.Contains("громк");
 
+    // Same idea as MentionsVolume, for the computer itself: "вырубай комп" means "shut the
+    // computer down", not "close an app called «комп»". "пк" is matched only as a whole word so
+    // an app/file name that merely contains those letters ("папку") isn't misrouted.
+    private static bool MentionsSystem(string text) =>
+        text.Contains("комп") || text.Contains("ноут") || text.Contains("систем") ||
+        Regex.IsMatch(text, @"\bпк\b");
+
+    // "вырубай"/"выруби" — colloquial "cut/kill": closes an app, shuts the computer down or
+    // mutes the sound depending on the object.
+    private static bool MentionsCutVerb(string text) => text.Contains("выруб");
+
     public Task<ResolveResult> ResolveAsync(string utterance, NluContext context)
     {
         var text = Normalize(utterance);
@@ -70,15 +81,23 @@ public class RuleBasedResolver : ICommandResolver
         if (openMatch.Success)
             return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(openMatch.Groups["name"].Value.Trim()) });
 
+        // Falls through (instead of claiming the phrase) when the captured "app name" is really
+        // the computer or the sound — "вырубай комп"/"выруби звук" are handled by the
+        // system_control/volume_control checks below.
         var closeMatch = Regex.Match(text, @"^(закрой|вырубай|выруби)\s+(?<name>.+)$");
-        if (closeMatch.Success)
+        if (closeMatch.Success &&
+            !MentionsSystem(closeMatch.Groups["name"].Value) &&
+            !MentionsVolume(closeMatch.Groups["name"].Value))
             return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(closeMatch.Groups["name"].Value.Trim()) });
 
         var wantOpenMatch = Regex.Match(text, @"^хочу\s+открыть\s+(?<name>.+)$");
         if (wantOpenMatch.Success)
             return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(wantOpenMatch.Groups["name"].Value.Trim()) });
 
-        if (ShutdownWords.Any(w => text.Contains(w)))
+        // "вырубай комп" — shutdown synonym. Excluded when the sound is also mentioned
+        // ("выруби звук на компе" means mute, handled by the volume checks below).
+        if (ShutdownWords.Any(w => text.Contains(w)) ||
+            (MentionsCutVerb(text) && MentionsSystem(text) && !MentionsVolume(text)))
             return Resolved("system_control", new() { ["action"] = "shutdown" });
         if (RestartWords.Any(w => text.Contains(w)))
             return Resolved("system_control", new() { ["action"] = "restart" });
@@ -87,10 +106,11 @@ public class RuleBasedResolver : ICommandResolver
         if (SleepWords.Any(w => text.Contains(w)))
             return Resolved("system_control", new() { ["action"] = "sleep" });
 
-        if (RussianNumberParser.TryExtractPercent(text, out var percent) &&
-            (text.Contains("громк") || text.Contains("звук")))
+        // Direction comes from the verb (shared with level 2's ArgExtraction), not a hardcoded
+        // "up": "убавь звук на 20" must be down 20, not up 20.
+        if (RussianNumberParser.TryExtractPercent(text, out var percent) && MentionsVolume(text))
         {
-            return Resolved("volume_control", new() { ["action"] = "up", ["amount"] = percent });
+            return Resolved("volume_control", new() { ["action"] = ArgExtraction.DetectVolumeAction(text), ["amount"] = percent });
         }
 
         if (text.Contains("громче") || text.Contains("прибавь звук") || text.Contains("прибавь громк") ||
@@ -99,7 +119,8 @@ public class RuleBasedResolver : ICommandResolver
         if (text.Contains("тише") || text.Contains("убавь звук") || text.Contains("убавь громк"))
             return Resolved("volume_control", new() { ["action"] = "down" });
         if (text.Contains("выключи звук") || text.Contains("без звука") || text.Contains("замьють") ||
-            text.Contains("заглуши") || text.Contains("выключи громкость"))
+            text.Contains("заглуши") || text.Contains("выключи громкость") ||
+            (MentionsCutVerb(text) && MentionsVolume(text)))
             return Resolved("volume_control", new() { ["action"] = "mute" });
         if (text.Contains("включи звук") || text.Contains("верни звук") || text.Contains("включи громкость"))
             return Resolved("volume_control", new() { ["action"] = "unmute" });

@@ -1,6 +1,9 @@
 using Jarvis.Core.Config;
 using Jarvis.Core.Nlu;
 using Jarvis.Core.Tools;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 using Xunit;
 
 namespace Jarvis.Core.Tests.Nlu;
@@ -168,6 +171,65 @@ public class CommandPipelineTests
     }
 }
 
+// Program.cs handles "отмена" itself (so the user always gets «Отменено.», even when nothing is
+// pending in the pipeline any more because the shutdown was already confirmed) and never passes
+// it on to ProcessAsync. These cover the two small pipeline members that REPL path relies on.
+public class CommandPipelineCancelTests
+{
+    private static NluContext BuildContext() => new(new AppsCatalog(new List<AppEntry>()));
+
+    [Theory]
+    [InlineData("отмена")]
+    [InlineData("Отмена")]
+    [InlineData("  ОТМЕНА  ")]
+    [InlineData("отмена.")]
+    public void IsCancelCommand_RecognizesCancelWord(string input)
+    {
+        Assert.True(CommandPipeline.IsCancelCommand(input));
+    }
+
+    [Theory]
+    [InlineData("да")]
+    [InlineData("отменить")]
+    [InlineData("отмена выключения")]
+    [InlineData("")]
+    public void IsCancelCommand_RejectsOtherInput(string input)
+    {
+        Assert.False(CommandPipeline.IsCancelCommand(input));
+    }
+
+    // Since Program.cs no longer routes "отмена" through ProcessAsync, it must clear a pending
+    // confirmation some other way — otherwise "выключи ноут" → "отмена" → "да" would still shut
+    // the computer down.
+    [Fact]
+    public async Task ClearPending_DropsPendingConfirmation_SoLaterDaDoesNotExecute()
+    {
+        var recordingTool = new RecordingTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1), expectedUtterance: "выключи ноут"),
+        };
+        var registry = new ToolRegistry(new ITool[] { recordingTool });
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext());
+
+        await pipeline.ProcessAsync("выключи ноут");
+        pipeline.ClearPending();
+        var afterDa = await pipeline.ProcessAsync("да");
+
+        Assert.Single(recordingTool.Calls);
+        Assert.DoesNotContain(recordingTool.Calls, c => c.Confirmed);
+        Assert.False(afterDa.Resolved);
+    }
+
+    [Fact]
+    public void ClearPending_WithNothingPending_IsNoOp()
+    {
+        var pipeline = new CommandPipeline(Array.Empty<ICommandResolver>(), new ToolRegistry(Array.Empty<ITool>()), BuildContext());
+
+        pipeline.ClearPending();
+    }
+}
+
 public class ThrowingTool : ITool
 {
     public string Name => "open_app";
@@ -175,9 +237,47 @@ public class ThrowingTool : ITool
         throw new InvalidOperationException("boom");
 }
 
+// A resolver that fails (e.g. EmbeddingResolver's ONNX inference on malformed input once a real
+// model is present). Throws either synchronously from ResolveAsync or via a faulted Task, since
+// both reach the pipeline differently.
+public class ThrowingResolver : ICommandResolver
+{
+    private readonly bool _faultedTask;
+
+    public ThrowingResolver(int level, bool faultedTask = false)
+    {
+        Level = level;
+        _faultedTask = faultedTask;
+    }
+
+    public int Level { get; }
+    public bool IsAvailable => true;
+
+    public Task<ResolveResult> ResolveAsync(string utterance, NluContext context)
+    {
+        var ex = new InvalidOperationException("resolver boom");
+        if (_faultedTask)
+            return Task.FromException<ResolveResult>(ex);
+        throw ex;
+    }
+}
+
+public class CollectingSink : ILogEventSink
+{
+    public List<LogEvent> Events { get; } = new();
+    public void Emit(LogEvent logEvent) => Events.Add(logEvent);
+}
+
 public class CommandPipelineErrorHandlingTests
 {
     private static NluContext BuildContext() => new(new AppsCatalog(new List<AppEntry>()));
+
+    private static (Serilog.ILogger Logger, CollectingSink Sink) BuildLogger()
+    {
+        var sink = new CollectingSink();
+        var logger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
+        return (logger, sink);
+    }
 
     [Fact]
     public async Task ProcessAsync_ToolThrows_ReturnsFriendlyMessageWithoutCrashing()
@@ -193,5 +293,66 @@ public class CommandPipelineErrorHandlingTests
 
         Assert.False(outcome.Resolved);
         Assert.Equal("Не получилось выполнить команду.", outcome.Message);
+    }
+
+    // Spec: "Инструмент бросает исключение → перехватывается в CommandPipeline, логируется".
+    [Fact]
+    public async Task ProcessAsync_ToolThrows_LogsExceptionWithToolName()
+    {
+        var (logger, sink) = BuildLogger();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("open_app", new Dictionary<string, object?> { ["name"] = "хром" }, 1.0, 1)),
+        };
+        var registry = new ToolRegistry(new ITool[] { new ThrowingTool() });
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext(), logger);
+
+        var outcome = await pipeline.ProcessAsync("открой хром");
+
+        Assert.Equal("Не получилось выполнить команду.", outcome.Message);
+        var logEvent = Assert.Single(sink.Events);
+        Assert.Equal(LogEventLevel.Warning, logEvent.Level);
+        Assert.IsType<InvalidOperationException>(logEvent.Exception);
+        Assert.Equal("\"open_app\"", logEvent.Properties["ToolName"].ToString());
+    }
+
+    // Spec: "деградация, а не падение процесса" — one broken resolver must not crash the REPL
+    // nor stop the pipeline from falling back to the next working resolver.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_ResolverThrows_SkipsItLogsAndFallsBackToNextResolver(bool faultedTask)
+    {
+        var (logger, sink) = BuildLogger();
+        var openAppTool = new RecordingOpenAppTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new ThrowingResolver(1, faultedTask),
+            new StubResolver(2, ResolveResult.For("open_app", new Dictionary<string, object?> { ["name"] = "хром" }, 0.9, 2)),
+        };
+        var registry = new ToolRegistry(new ITool[] { openAppTool });
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext(), logger);
+
+        var outcome = await pipeline.ProcessAsync("открой хром");
+
+        Assert.True(outcome.Resolved);
+        Assert.Equal("open_app", outcome.ToolName);
+        Assert.Equal(2, outcome.Level);
+        Assert.Single(openAppTool.Calls);
+        var logEvent = Assert.Single(sink.Events);
+        Assert.Equal(LogEventLevel.Warning, logEvent.Level);
+        Assert.IsType<InvalidOperationException>(logEvent.Exception);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_OnlyResolverThrows_WithoutLogger_ReturnsNotUnderstood()
+    {
+        var resolvers = new ICommandResolver[] { new ThrowingResolver(1) };
+        var pipeline = new CommandPipeline(resolvers, new ToolRegistry(Array.Empty<ITool>()), BuildContext());
+
+        var outcome = await pipeline.ProcessAsync("что угодно");
+
+        Assert.False(outcome.Resolved);
+        Assert.Equal("Не понял команду.", outcome.Message);
     }
 }

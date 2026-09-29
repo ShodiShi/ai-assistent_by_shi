@@ -23,7 +23,16 @@ public class CloseAppTool : ITool
         if (entry is null)
             return Task.FromResult(new ToolResult(false, $"Не знаю приложение «{name}»."));
 
-        var processName = Path.GetFileNameWithoutExtension(entry.Path ?? entry.Name);
+        var processName = !string.IsNullOrWhiteSpace(entry.ProcessName)
+            ? entry.ProcessName.Trim()
+            : Path.GetFileNameWithoutExtension(entry.Path ?? entry.Name);
+
+        // Hard refusal, checked before the confirmed branch so "да" can't override it:
+        // explorer.exe is the Windows shell (desktop + taskbar), closing or killing it takes the
+        // whole desktop down.
+        if (IsWindowsShell(processName))
+            return Task.FromResult(new ToolResult(false,
+                "Не буду закрывать проводник — это оболочка Windows, это может уронить рабочий стол."));
 
         if (context.IsConfirmed)
         {
@@ -44,4 +53,8 @@ public class CloseAppTool : ITool
             Prompt: $"{entry.Name} не закрылся сам. Закрыть принудительно? (да/отмена)");
         return Task.FromResult(new ToolResult(false, confirmation.Prompt, confirmation));
     }
+
+    private static bool IsWindowsShell(string processName) =>
+        processName.Equals("explorer", StringComparison.OrdinalIgnoreCase) ||
+        processName.Equals("explorer.exe", StringComparison.OrdinalIgnoreCase);
 }

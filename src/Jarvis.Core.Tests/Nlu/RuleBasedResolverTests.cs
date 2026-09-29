@@ -74,6 +74,52 @@ public class RuleBasedResolverTests
         Assert.Equal(30, result.Args["amount"]);
     }
 
+    // Regression coverage for a real bug: the "подними X" -> open_app, "включи X" -> open_app
+    // and "выключи X" -> close_app catch-alls (added for conversational open/close phrasing)
+    // were originally placed/scoped so they stole real volume_control phrases that happen to
+    // start with the same verbs ("подними звук" is a real config/intents/volume_control.yaml
+    // sample). These must keep resolving to volume_control, never open_app/close_app.
+    [Theory]
+    [InlineData("подними звук", "up")]
+    [InlineData("подними звук погромче", "up")]
+    [InlineData("подними громкость", "up")]
+    [InlineData("включи громкость", "unmute")]
+    [InlineData("выключи громкость", "mute")]
+    public async Task ResolveAsync_VolumeVerbsSharedWithAppCatchAlls_ResolveAsVolumeControl(string phrase, string expectedAction)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("volume_control", result.ToolName);
+        Assert.Equal(expectedAction, result.Args["action"]);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LiftVolumeWithAmount_ExtractsAmount()
+    {
+        var result = await _resolver.ResolveAsync("подними громкость на 30", BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("volume_control", result.ToolName);
+        Assert.Equal("up", result.Args["action"]);
+        Assert.Equal(30, result.Args["amount"]);
+    }
+
+    // Same regression class for the "выключи X" -> close_app catch-all: phrases that mean
+    // "shut down the computer" in other words ("пк", "систему") must still resolve as
+    // system_control shutdown, not get swallowed by the generic close_app fallback.
+    [Theory]
+    [InlineData("выключи пк", "shutdown")]
+    [InlineData("выключи систему", "shutdown")]
+    public async Task ResolveAsync_ShutdownSynonymsSharedWithCloseAppCatchAll_ResolveAsSystemControl(string phrase, string expectedAction)
+    {
+        var result = await _resolver.ResolveAsync(phrase, BuildContext());
+
+        Assert.True(result.Resolved);
+        Assert.Equal("system_control", result.ToolName);
+        Assert.Equal(expectedAction, result.Args["action"]);
+    }
+
     [Theory]
     [InlineData("как там батарея")]
     [InlineData("сколько памяти свободно")]

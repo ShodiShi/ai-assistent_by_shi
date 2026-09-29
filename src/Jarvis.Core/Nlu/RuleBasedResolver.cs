@@ -40,7 +40,7 @@ public class RuleBasedResolver : ICommandResolver
         return normalized;
     }
 
-    private static readonly string[] ShutdownWords = { "выключи ноут", "выключи компьютер", "выключи комп", "выключи ноутбук" };
+    private static readonly string[] ShutdownWords = { "выключи ноут", "выключи компьютер", "выключи комп", "выключи ноутбук", "выключи пк", "выключи систему" };
     private static readonly string[] RestartWords = { "перезагрузи компьютер", "перезагрузи комп", "перезагрузи ноутбук", "ребут" };
     private static readonly string[] LockWords = { "заблокируй экран", "заблокируй компьютер", "заблокируй ноутбук" };
     private static readonly string[] SleepWords = { "усыпи ноутбук", "усыпи компьютер", "спящий режим", "пора спать" };
@@ -55,6 +55,13 @@ public class RuleBasedResolver : ICommandResolver
             : trimmed;
     }
 
+    // A captured app-name candidate that actually names the sound/volume ("звук"/"громкость"/
+    // "громче" etc.) is not an app — it means the "подними"/"включи"/"выключи" catch-alls below
+    // guessed wrong about which verb sense was meant. Guards against that regardless of where
+    // these catch-alls sit relative to the volume_control checks (belt-and-suspenders on top of
+    // ordering them after volume_control below).
+    private static bool MentionsVolume(string text) => text.Contains("звук") || text.Contains("громк");
+
     public Task<ResolveResult> ResolveAsync(string utterance, NluContext context)
     {
         var text = Normalize(utterance);
@@ -66,14 +73,6 @@ public class RuleBasedResolver : ICommandResolver
         var closeMatch = Regex.Match(text, @"^(закрой|вырубай|выруби)\s+(?<name>.+)$");
         if (closeMatch.Success)
             return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(closeMatch.Groups["name"].Value.Trim()) });
-
-        // Разговорные формулировки открытия приложения ("подними X на экран", "хочу открыть X")
-        // — покрываем их на уровне 1 напрямую, а не полагаемся на уровень 2, у которого нет
-        // надёжного способа отличить "открыть" от "закрыть" по одному только ключевому слову
-        // приложения ("хром" встречается в обучающих фразах и open_app, и close_app).
-        var liftMatch = Regex.Match(text, @"^подними\s+(?<name>.+)$");
-        if (liftMatch.Success)
-            return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(StripTrailingPhrase(liftMatch.Groups["name"].Value, "на экран")) });
 
         var wantOpenMatch = Regex.Match(text, @"^хочу\s+открыть\s+(?<name>.+)$");
         if (wantOpenMatch.Success)
@@ -94,19 +93,33 @@ public class RuleBasedResolver : ICommandResolver
             return Resolved("volume_control", new() { ["action"] = "up", ["amount"] = percent });
         }
 
-        if (text.Contains("громче") || text.Contains("прибавь звук") || text.Contains("прибавь громк"))
+        if (text.Contains("громче") || text.Contains("прибавь звук") || text.Contains("прибавь громк") ||
+            text.Contains("подними звук") || text.Contains("подними громкость"))
             return Resolved("volume_control", new() { ["action"] = "up" });
         if (text.Contains("тише") || text.Contains("убавь звук") || text.Contains("убавь громк"))
             return Resolved("volume_control", new() { ["action"] = "down" });
-        if (text.Contains("выключи звук") || text.Contains("без звука") || text.Contains("замьють") || text.Contains("заглуши"))
+        if (text.Contains("выключи звук") || text.Contains("без звука") || text.Contains("замьють") ||
+            text.Contains("заглуши") || text.Contains("выключи громкость"))
             return Resolved("volume_control", new() { ["action"] = "mute" });
-        if (text.Contains("включи звук") || text.Contains("верни звук"))
+        if (text.Contains("включи звук") || text.Contains("верни звук") || text.Contains("включи громкость"))
             return Resolved("volume_control", new() { ["action"] = "unmute" });
 
-        // "включи X" вне контекста звука — ещё одна разговорная форма открытия приложения.
-        // Проверяется после веток управления звуком, чтобы "включи звук" не перехватывался тут.
+        // Разговорные формулировки открытия приложения ("подними X на экран", "включи X") —
+        // покрываем их на уровне 1 напрямую, а не полагаемся на уровень 2, у которого нет
+        // надёжного способа отличить "открыть" от "закрыть" по одному только ключевому слову
+        // приложения ("хром" встречается в обучающих фразах и open_app, и close_app).
+        //
+        // Checked AFTER every volume_control branch above (not before) so "подними
+        // громкость"/"включи звук" etc. are claimed by volume_control first — these verbs
+        // ("подними", "включи") are heavily overloaded with volume phrasing in the real
+        // config/intents catalog. MentionsVolume is an extra guard on top of that ordering, in
+        // case one of these checks is ever reordered again without noticing the dependency.
+        var liftMatch = Regex.Match(text, @"^подними\s+(?<name>.+)$");
+        if (liftMatch.Success && !MentionsVolume(liftMatch.Groups["name"].Value))
+            return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(StripTrailingPhrase(liftMatch.Groups["name"].Value, "на экран")) });
+
         var turnOnMatch = Regex.Match(text, @"^включи\s+(?<name>.+)$");
-        if (turnOnMatch.Success)
+        if (turnOnMatch.Success && !MentionsVolume(turnOnMatch.Groups["name"].Value))
             return Resolved("open_app", new() { ["name"] = StripPolitenessFillers(turnOnMatch.Groups["name"].Value.Trim()) });
 
         if (text.Contains("батаре") || text.Contains("заряд") || text.Contains("сколько памяти") ||
@@ -116,13 +129,14 @@ public class RuleBasedResolver : ICommandResolver
 
         // Разговорные формулировки закрытия приложения — последний резерв перед Unresolved,
         // чтобы более специфичные ветки (system_control, volume_control) успевали сработать первыми
-        // ("выключи ноут"/"выключи звук" и т.п. не должны долетать до этой ветки).
+        // ("выключи ноут"/"выключи звук"/"выключи громкость" и т.п. не должны долетать до этой
+        // ветки — та же MentionsVolume-подстраховка, что и у "включи X" выше).
         var screenRemoveMatch = Regex.Match(text, @"^убери\s+со\s+экрана\s+(?<name>.+)$");
         if (screenRemoveMatch.Success)
             return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(screenRemoveMatch.Groups["name"].Value.Trim()) });
 
         var turnOffMatch = Regex.Match(text, @"^выключи\s+(?<name>.+)$");
-        if (turnOffMatch.Success)
+        if (turnOffMatch.Success && !MentionsVolume(turnOffMatch.Groups["name"].Value))
             return Resolved("close_app", new() { ["name"] = StripPolitenessFillers(turnOffMatch.Groups["name"].Value.Trim()) });
 
         return Task.FromResult(ResolveResult.Unresolved());

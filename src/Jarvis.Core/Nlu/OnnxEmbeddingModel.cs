@@ -13,15 +13,36 @@ public class OnnxEmbeddingModel : IEmbeddingModel, IDisposable
     {
         _session = new InferenceSession(modelPath);
         using var tokenizerStream = File.OpenRead(tokenizerPath);
-        _tokenizer = SentencePieceTokenizer.Create(tokenizerStream);
+        // addBeginningOfSentence/addEndOfSentence оставлены false: библиотека вставляет их по
+        // "сырым" ID самой .model-модели (bos=1, без eos), а нам нужны ID в раскладке HF/fairseq
+        // XLM-RoBERTa (bos=0, pad=1, eos=2, unk=3, остальные токены — raw_id+1), под которую
+        // реально обучен multilingual-e5-small. Обёртка и сдвиг делаются вручную в Embed —
+        // см. RemapToFairseqIds. Эмпирически проверено на скачанной модели (см.
+        // OnnxEmbeddingModelIntegrationTests): без этого сдвига косинусное сходство не отличает
+        // похожие фразы от случайных (см. запаркованный риск в roadmap).
+        _tokenizer = SentencePieceTokenizer.Create(tokenizerStream, addBeginningOfSentence: false, addEndOfSentence: false);
     }
 
     public static bool FilesExist(string modelPath, string tokenizerPath) =>
         File.Exists(modelPath) && File.Exists(tokenizerPath);
 
+    // Raw SentencePiece id -> HF/fairseq XLM-RoBERTa id: content token raw_id (raw_id != 0)
+    // shifts by fairseq_offset=1; the piece at raw_id 0 (the .model's own <unk>) maps to the
+    // fairseq unk id 3. Wrapped with fairseq's fixed bos=0 / eos=2 (never produced by the raw
+    // tokenizer, which doesn't share fairseq's reserved-id scheme).
+    private static long[] RemapToFairseqIds(IReadOnlyList<int> rawIds)
+    {
+        var result = new long[rawIds.Count + 2];
+        result[0] = 0L; // <s>
+        for (var i = 0; i < rawIds.Count; i++)
+            result[i + 1] = rawIds[i] == 0 ? 3L : rawIds[i] + 1L;
+        result[^1] = 2L; // </s>
+        return result;
+    }
+
     public float[] Embed(string text)
     {
-        var ids = _tokenizer.EncodeToIds(text).Select(i => (long)i).ToArray();
+        var ids = RemapToFairseqIds(_tokenizer.EncodeToIds(text));
         var inputIds = new DenseTensor<long>(ids, new[] { 1, ids.Length });
         var attentionMask = new DenseTensor<long>(Enumerable.Repeat(1L, ids.Length).ToArray(), new[] { 1, ids.Length });
 

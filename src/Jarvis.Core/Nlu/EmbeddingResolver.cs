@@ -10,7 +10,13 @@ public class EmbeddingResolver : ICommandResolver
     {
         _model = model;
         _threshold = threshold;
-        _index = samples.Select(s => (s, model.Embed("passage: " + s.Phrase))).ToList();
+        // e5's card documents "passage: "/"query: " for asymmetric retrieval (find a passage
+        // that answers a query) and "query: " on both sides for symmetric similarity tasks —
+        // matching a user utterance against example phrases of the same kind is symmetric, and
+        // empirically (OnnxEmbeddingModelIntegrationTests.RealCatalog_EmbeddingResolver, full
+        // 50-phrase fixture) "query: " on both sides resolves more correctly at the same
+        // false-positive rate than the "passage: " asymmetric convention.
+        _index = samples.Select(s => (s, model.Embed("query: " + s.Phrase))).ToList();
     }
 
     public int Level => 2;

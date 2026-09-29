@@ -1,5 +1,8 @@
 language: ru
-embedding_threshold: 0.72
+# Откалибровано эмпирически на реальной модели (multilingual-e5-small int8) против 50-фразовой
+# фикстуры Task 13: 0.72 давал 6/6 ложных срабатываний на нераспознаваемых фразах, 0.90 — 0 при
+# 40/44 верных совпадений. См. AppConfig.EmbeddingThreshold и roadmap risk-секцию.
+embedding_threshold: 0.90
 volume_step_percent: 10
 shutdown_confirm_seconds: 20
 confirmation_timeout_seconds: 15

@@ -8,10 +8,29 @@ namespace Jarvis.Core.Tests.Nlu;
 public class StubResolver : ICommandResolver
 {
     private readonly ResolveResult _result;
-    public StubResolver(int level, ResolveResult result) { Level = level; _result = result; }
+    private readonly string? _expectedUtterance;
+
+    // expectedUtterance is optional and defaults to null ("always match", the original
+    // behavior every other test here relies on). Tests that need a resolver which behaves
+    // like a real, input-aware resolver — i.e. only matches a specific trigger phrase and
+    // returns Unresolved for anything else — pass it explicitly.
+    public StubResolver(int level, ResolveResult result, string? expectedUtterance = null)
+    {
+        Level = level;
+        _result = result;
+        _expectedUtterance = expectedUtterance;
+    }
+
     public int Level { get; }
     public bool IsAvailable => true;
-    public Task<ResolveResult> ResolveAsync(string utterance, NluContext context) => Task.FromResult(_result);
+
+    public Task<ResolveResult> ResolveAsync(string utterance, NluContext context)
+    {
+        if (_expectedUtterance is not null && !string.Equals(utterance, _expectedUtterance, StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(ResolveResult.Unresolved());
+
+        return Task.FromResult(_result);
+    }
 }
 
 public class RecordingTool : ITool
@@ -78,7 +97,10 @@ public class CommandPipelineTests
         var recordingTool = new RecordingTool();
         var resolvers = new ICommandResolver[]
         {
-            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1)),
+            // Input-aware: only matches the exact trigger phrase, like a real resolver would.
+            // "который час" doesn't match it, so it correctly resolves to Unresolved instead
+            // of re-triggering system_control a second time.
+            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1), expectedUtterance: "выключи ноут"),
         };
         var registry = new ToolRegistry(new ITool[] { recordingTool });
         var pipeline = new CommandPipeline(resolvers, registry, BuildContext());

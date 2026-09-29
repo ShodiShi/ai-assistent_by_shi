@@ -67,6 +67,25 @@ public class ArgExtractionTests
     }
 
     [Fact]
+    public void ExtractArgs_CloseApp_MatchesInflectedFormViaAliasPrefix()
+    {
+        // config/intents/close_app.yaml's own phrase: "хрома" is the genitive inflection of
+        // the alias "хром" (not an exact match), and previously dropped the name entirely.
+        var args = ArgExtraction.ExtractArgs("close_app", "убей процесс хрома", BuildCatalog());
+
+        Assert.Equal("хром", args["name"]);
+    }
+
+    [Fact]
+    public void ExtractArgs_CloseApp_MatchesAnotherInflectedFormViaAliasPrefix()
+    {
+        // "телеграма" is the genitive inflection of the alias "телеграм".
+        var args = ArgExtraction.ExtractArgs("close_app", "закрой телеграма", BuildCatalog());
+
+        Assert.Equal("телеграм", args["name"]);
+    }
+
+    [Fact]
     public void ExtractArgs_VolumeControl_UnmutePhrase_MatchesLevel1Behavior()
     {
         // RuleBasedResolver (level 1) resolves "включи звук" to action "unmute" — level 2

@@ -63,10 +63,38 @@ public static class ArgExtraction
         {
             if (i + 1 < words.Length)
             {
-                var twoWord = words[i] + " " + words[i + 1];
-                if (catalog.FindByNameOrAlias(twoWord) != null) return twoWord;
+                var twoWordMatch = MatchAlias(words[i] + " " + words[i + 1], catalog);
+                if (twoWordMatch != null) return twoWordMatch;
             }
-            if (catalog.FindByNameOrAlias(words[i]) != null) return words[i];
+            var oneWordMatch = MatchAlias(words[i], catalog);
+            if (oneWordMatch != null) return oneWordMatch;
+        }
+        return null;
+    }
+
+    // A word in the utterance may be an inflected form of an alias (Russian case endings add a
+    // suffix onto the base form, e.g. "хрома" for alias "хром", "телеграма" for "телеграм"), so
+    // besides an exact alias match we also accept a candidate that STARTS WITH a known alias.
+    // The prefix check is guarded to aliases of at least MinPrefixAliasLength characters so a
+    // short alias (e.g. "код") doesn't fuzzy-match unrelated words. Exact match is checked
+    // first and is unaffected by the guard — this is a strict widening of exact matching, not a
+    // replacement of it.
+    private const int MinPrefixAliasLength = 4;
+
+    private static string? MatchAlias(string candidate, AppsCatalog catalog)
+    {
+        if (catalog.FindByNameOrAlias(candidate) != null) return candidate;
+
+        foreach (var app in catalog.Apps)
+        {
+            foreach (var alias in app.Aliases.Append(app.Name))
+            {
+                if (alias.Length >= MinPrefixAliasLength &&
+                    candidate.StartsWith(alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    return alias;
+                }
+            }
         }
         return null;
     }

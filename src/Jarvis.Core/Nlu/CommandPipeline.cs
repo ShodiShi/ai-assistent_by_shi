@@ -10,16 +10,30 @@ public class CommandPipeline
     private readonly IToolRegistry _tools;
     private readonly NluContext _context;
     private readonly Serilog.ILogger? _logger;
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _confirmationTimeout;
     private PendingConfirmation? _pending;
+    private DateTimeOffset _pendingSetAt;
 
     // logger is optional: when null, caught tool/resolver exceptions are still handled (the
     // pipeline degrades instead of crashing), they just aren't logged anywhere.
-    public CommandPipeline(IReadOnlyList<ICommandResolver> resolvers, IToolRegistry tools, NluContext context, Serilog.ILogger? logger = null)
+    // timeProvider/confirmationTimeout default to the real clock and 15 seconds (spec: "тайм-аут
+    // подтверждения (например, 15 c условного «времени») сбрасывает ожидание") — tests inject a
+    // fake TimeProvider to control elapsed time deterministically.
+    public CommandPipeline(
+        IReadOnlyList<ICommandResolver> resolvers,
+        IToolRegistry tools,
+        NluContext context,
+        Serilog.ILogger? logger = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? confirmationTimeout = null)
     {
         _resolvers = resolvers;
         _tools = tools;
         _context = context;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _confirmationTimeout = confirmationTimeout ?? TimeSpan.FromSeconds(15);
     }
 
     // Single definition of the cancel word, shared with Program.cs's REPL (which handles
@@ -38,16 +52,18 @@ public class CommandPipeline
         if (_pending is not null)
         {
             var pending = _pending;
+            var expired = _timeProvider.GetUtcNow() - _pendingSetAt > _confirmationTimeout;
             _pending = null;
 
-            if (normalized is "да" or "да.")
+            if (!expired && normalized is "да" or "да.")
                 return await ExecuteTool(pending!.ToolName, pending.Args, confirmed: true, level: 0);
 
             // _pending уже обнулено выше — если это "отмена", просто сообщаем об отмене.
-            if (IsCancelCommand(input))
+            if (!expired && IsCancelCommand(input))
                 return new PipelineOutcome("Отменено.", 0, null, true);
 
-            // Не "да" и не "отмена" — ожидание сброшено, обрабатываем ввод как новую команду ниже.
+            // Либо время подтверждения истекло, либо это несвязанный ввод — в обоих случаях
+            // ожидание уже сброшено выше, обрабатываем текущий ввод как новую команду ниже.
         }
 
         foreach (var resolver in _resolvers.Where(r => r.IsAvailable).OrderBy(r => r.Level))
@@ -92,7 +108,10 @@ public class CommandPipeline
         }
 
         if (result.Confirmation is not null)
+        {
             _pending = result.Confirmation;
+            _pendingSetAt = _timeProvider.GetUtcNow();
+        }
 
         return new PipelineOutcome(result.Message, level, toolName, result.Success);
     }

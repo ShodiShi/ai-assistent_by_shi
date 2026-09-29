@@ -59,7 +59,8 @@ else
 }
 
 var context = new NluContext(appsCatalog);
-var pipeline = new CommandPipeline(resolvers, registry, context, logger);
+var pipeline = new CommandPipeline(resolvers, registry, context, logger,
+    confirmationTimeout: TimeSpan.FromSeconds(config.ConfirmationTimeoutSeconds));
 
 Console.WriteLine("Jarvis.Core — этап 1 (текстовый режим). Ctrl+C для выхода.");
 

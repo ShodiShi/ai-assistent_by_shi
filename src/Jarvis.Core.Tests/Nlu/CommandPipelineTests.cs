@@ -356,3 +356,101 @@ public class CommandPipelineErrorHandlingTests
         Assert.Equal("Не понял команду.", outcome.Message);
     }
 }
+
+// Deterministic clock for testing the confirmation timeout without real delays.
+public class ManualTimeProvider : TimeProvider
+{
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+    public override DateTimeOffset GetUtcNow() => _now;
+    public void Advance(TimeSpan by) => _now += by;
+}
+
+// Spec: "тайм-аут подтверждения (например, 15 c условного «времени») сбрасывает ожидание" — a
+// pending confirmation that sits too long must expire, so a stray/late "да" can never execute a
+// dangerous action the user is no longer actively confirming.
+public class CommandPipelineTimeoutTests
+{
+    private static NluContext BuildContext() => new(new AppsCatalog(new List<AppEntry>()));
+
+    [Fact]
+    public async Task ProcessAsync_DaWithinTimeout_StillExecutes()
+    {
+        var recordingTool = new RecordingTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1), expectedUtterance: "выключи ноут"),
+        };
+        var registry = new ToolRegistry(new ITool[] { recordingTool });
+        var clock = new ManualTimeProvider();
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext(), timeProvider: clock, confirmationTimeout: TimeSpan.FromSeconds(15));
+
+        await pipeline.ProcessAsync("выключи ноут");
+        clock.Advance(TimeSpan.FromSeconds(10));
+        var outcome = await pipeline.ProcessAsync("да");
+
+        Assert.True(recordingTool.Calls[1].Confirmed);
+        Assert.True(outcome.Resolved);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DaAfterTimeout_DoesNotExecuteAndDropsPending()
+    {
+        var recordingTool = new RecordingTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1), expectedUtterance: "выключи ноут"),
+        };
+        var registry = new ToolRegistry(new ITool[] { recordingTool });
+        var clock = new ManualTimeProvider();
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext(), timeProvider: clock, confirmationTimeout: TimeSpan.FromSeconds(15));
+
+        await pipeline.ProcessAsync("выключи ноут");
+        clock.Advance(TimeSpan.FromSeconds(16));
+        var outcome = await pipeline.ProcessAsync("да");
+
+        Assert.DoesNotContain(recordingTool.Calls, c => c.Confirmed);
+        Assert.False(outcome.Resolved);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ExpiredPending_ThenGenuinelyDifferentCommand_ProcessesIt()
+    {
+        var systemControlTool = new RecordingTool();
+        var openAppTool = new RecordingOpenAppTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1), expectedUtterance: "выключи ноут"),
+            new StubResolver(1, ResolveResult.For("open_app", new Dictionary<string, object?> { ["name"] = "хром" }, 1.0, 1), expectedUtterance: "открой хром"),
+        };
+        var registry = new ToolRegistry(new ITool[] { systemControlTool, openAppTool });
+        var clock = new ManualTimeProvider();
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext(), timeProvider: clock, confirmationTimeout: TimeSpan.FromSeconds(15));
+
+        await pipeline.ProcessAsync("выключи ноут");
+        clock.Advance(TimeSpan.FromSeconds(20));
+        var outcome = await pipeline.ProcessAsync("открой хром");
+
+        Assert.Single(openAppTool.Calls);
+        Assert.True(outcome.Resolved);
+        Assert.Equal("open_app", outcome.ToolName);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NoTimeoutConfigured_DefaultsTo15Seconds()
+    {
+        var recordingTool = new RecordingTool();
+        var resolvers = new ICommandResolver[]
+        {
+            new StubResolver(1, ResolveResult.For("system_control", new Dictionary<string, object?> { ["action"] = "shutdown" }, 1.0, 1), expectedUtterance: "выключи ноут"),
+        };
+        var registry = new ToolRegistry(new ITool[] { recordingTool });
+        var clock = new ManualTimeProvider();
+        var pipeline = new CommandPipeline(resolvers, registry, BuildContext(), timeProvider: clock);
+
+        await pipeline.ProcessAsync("выключи ноут");
+        clock.Advance(TimeSpan.FromSeconds(16));
+        await pipeline.ProcessAsync("да");
+
+        Assert.DoesNotContain(recordingTool.Calls, c => c.Confirmed);
+    }
+}
